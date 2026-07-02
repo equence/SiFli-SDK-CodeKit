@@ -8,6 +8,9 @@ import { MCP_SERVER_LABEL } from '../constants';
 import { RegisteredMcpToolDefinition } from '../types';
 import { LogService } from './logService';
 import { ToolRegistryService } from './toolRegistryService';
+import { BuildTaskService } from './buildTaskService';
+import { ConfigService } from './configService';
+import { SerialPortService } from './serialPortService';
 
 type McpSettings = {
   enabled: boolean;
@@ -72,6 +75,7 @@ export class McpServerService {
   private constructor() {
     this.logService = LogService.getInstance();
     this.toolRegistry = ToolRegistryService.getInstance();
+    this.connectResourceEventSources();
   }
 
   public static getInstance(): McpServerService {
@@ -409,12 +413,16 @@ export class McpServerService {
         version: vscode.extensions.getExtension('SiFli.sifli-sdk-codekit')?.packageJSON.version ?? '0.0.0',
       },
       {
+        capabilities: {
+          resources: { subscribe: true },
+        },
         instructions:
           'This MCP server is hosted by the SiFli SDK CodeKit VS Code extension and executes commands inside the VS Code host.',
       }
     );
 
     this.registerTools(server);
+    this.registerResources(server);
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
@@ -478,6 +486,65 @@ export class McpServerService {
             })
           )) as any
       );
+    }
+  }
+
+  private registerResources(server: McpServer): void {
+    // codekit://build/status — current build state
+    server.resource('build-status', 'codekit://build/status', async () => ({
+      contents: [
+        {
+          uri: 'codekit://build/status',
+          text: JSON.stringify({
+            running: false,
+            lastUpdated: new Date().toISOString(),
+          }),
+        },
+      ],
+    }));
+
+    // codekit://state/summary — project state snapshot
+    server.resource('state-summary', 'codekit://state/summary', async () => ({
+      contents: [
+        {
+          uri: 'codekit://state/summary',
+          text: JSON.stringify(this.getStateSummary()),
+        },
+      ],
+    }));
+  }
+
+  private getStateSummary(): unknown {
+    const configService = ConfigService.getInstance();
+    const serialPortService = SerialPortService.getInstance();
+    const currentSdk = configService.getCurrentSdk();
+    return {
+      currentSdk: currentSdk ? { version: currentSdk.version, path: currentSdk.path, valid: currentSdk.valid } : null,
+      selectedBoard: configService.getSelectedBoardName(),
+      selectedSerialPort: serialPortService.selectedSerialPort,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  private connectResourceEventSources(): void {
+    // Build status changes
+    BuildTaskService.getInstance().onDidChangeTasks(() => {
+      this.notifyResourceUpdated('codekit://build/status');
+    });
+
+    // State changes (SDK/board/port selected)
+    this.onDidChangeState(() => {
+      this.notifyResourceUpdated('codekit://state/summary');
+    });
+  }
+
+  private notifyResourceUpdated(uri: string): void {
+    for (const [sessionId, entry] of this.sessions.entries()) {
+      try {
+        entry.server.server.notification({ method: 'notifications/resources/updated', params: { uri } });
+      } catch (error) {
+        this.logService.warn(`Failed to send resource update for session ${sessionId}: ${String(error)}`);
+      }
     }
   }
 

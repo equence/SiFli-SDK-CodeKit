@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { randomUUID } from 'crypto';
 import { TERMINAL_NAME } from '../constants';
 import {
+  KconfigChange,
   SdkVersion,
   WorkflowDefinition,
   WorkflowReference,
@@ -16,6 +17,7 @@ import { BuildExecutionService } from './buildExecutionService';
 import { ClangdService } from './clangdService';
 import { ConfigService } from './configService';
 import { GitService } from './gitService';
+import { KconfigService } from './kconfigService';
 import { LogService } from './logService';
 import { CreateProjectFromTemplateOptions, ProjectCreationService } from './projectCreationService';
 import { SerialMonitorService } from './serialMonitorService';
@@ -63,6 +65,7 @@ export class AutomationService {
   private readonly projectCreationService: ProjectCreationService;
   private readonly clangdService: ClangdService;
   private readonly workspaceStateService: WorkspaceStateService;
+  private readonly kconfigService: KconfigService;
 
   private constructor() {
     this.workflowService = WorkflowService.getInstance();
@@ -78,6 +81,7 @@ export class AutomationService {
     this.projectCreationService = ProjectCreationService.getInstance();
     this.clangdService = ClangdService.getInstance();
     this.workspaceStateService = WorkspaceStateService.getInstance();
+    this.kconfigService = KconfigService.getInstance();
   }
 
   public static getInstance(): AutomationService {
@@ -1056,6 +1060,81 @@ export class AutomationService {
       ...result,
       hostInteractionRequired: result.success,
     });
+  }
+
+  public async kconfigSnapshot(): Promise<unknown> {
+    const project = this.ensureSiFliProject('kconfigSnapshot');
+    if (!project.ok) {
+      return project.payload;
+    }
+    try {
+      const snapshot = await this.kconfigService.getSnapshot();
+      return this.withResult({
+        success: true,
+        operation: 'kconfigSnapshot',
+        snapshot,
+      });
+    } catch (error) {
+      return this.withResult({
+        success: false,
+        operation: 'kconfigSnapshot',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  public async kconfigSetValue(input: { symbol: string; value: string }): Promise<unknown> {
+    const project = this.ensureSiFliProject('kconfigSetValue');
+    if (!project.ok) {
+      return project.payload;
+    }
+    try {
+      const change: KconfigChange = { symbol: input.symbol, value: input.value };
+      const preview = await this.kconfigService.previewChanges([change]);
+      if (!preview.dirty) {
+        return this.withResult({
+          success: true,
+          operation: 'kconfigSetValue',
+          message: `Symbol "${input.symbol}" already set to "${input.value}".`,
+          snapshot: preview,
+        });
+      }
+      const snapshot = await this.kconfigService.saveChanges([change]);
+      return this.withResult({
+        success: true,
+        operation: 'kconfigSetValue',
+        message: `Set ${input.symbol}=${input.value}`,
+        snapshot,
+      });
+    } catch (error) {
+      return this.withResult({
+        success: false,
+        operation: 'kconfigSetValue',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  public async kconfigSave(input: { changes: KconfigChange[] }): Promise<unknown> {
+    const project = this.ensureSiFliProject('kconfigSave');
+    if (!project.ok) {
+      return project.payload;
+    }
+    try {
+      const snapshot = await this.kconfigService.saveChanges(input.changes);
+      return this.withResult({
+        success: true,
+        operation: 'kconfigSave',
+        changedCount: input.changes.length,
+        snapshot,
+      });
+    } catch (error) {
+      return this.withResult({
+        success: false,
+        operation: 'kconfigSave',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async runBuildOperation(

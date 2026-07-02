@@ -17,6 +17,7 @@ Prefer CodeKit-hosted tools over shell commands when the task can be expressed t
 - Build, rebuild, clean, download, or menuconfig: use `sifli_build_*`.
 - Serial port selection or monitor interaction: use `sifli_serial_*` or `sifli_monitor_*`.
 - Workflow validation, listing, inspection, or execution: use `sifli_workflow_*`.
+- Kconfig configuration (read, set, save): use `sifli_kconfig_*`.
 
 These underscore names are Codex-style wrappers. Other agents may expose raw MCP names such as `sifli.project.getState` or VS Code LM tool names such as `sifli-sdk-codekit_getProjectState`. If names differ, map by purpose rather than spelling. See `references/tools.md`.
 
@@ -26,12 +27,12 @@ Use shell commands only for repository development tasks, direct file edits, exp
 
 CodeKit can appear differently depending on the host agent:
 
-| Environment | Typical Tool Surface | Example State Tool |
-|-------------|----------------------|--------------------|
-| Codex MCP wrapper | Function-style names | `sifli_project_getState` |
-| Raw MCP clients | Server tool names | `sifli.project.getState` |
-| VS Code LM tools | Extension-contributed LM names | `sifli-sdk-codekit_getProjectState` |
-| Generic agents | Adapter-specific aliases | Check the current tool list |
+| Environment       | Typical Tool Surface           | Example State Tool                  |
+| ----------------- | ------------------------------ | ----------------------------------- |
+| Codex MCP wrapper | Function-style names           | `sifli_project_getState`            |
+| Raw MCP clients   | Server tool names              | `sifli.project.getState`            |
+| VS Code LM tools  | Extension-contributed LM names | `sifli-sdk-codekit_getProjectState` |
+| Generic agents    | Adapter-specific aliases       | Check the current tool list         |
 
 Before calling a tool:
 
@@ -75,6 +76,7 @@ Is CodeKit MCP available?
 │         ├── Build/download/menuconfig  → sifli_build_*
 │         ├── Serial/monitor             → sifli_serial_*, sifli_monitor_*
 │         ├── Workflow                   → sifli_workflow_*
+│         ├── Kconfig                    → sifli_kconfig_*
 │         └── No match → Is it raw flash/sftool territory?
 │                       ├── Yes → Use sftool skill
 │                       └── No  → Use shell commands
@@ -104,28 +106,39 @@ Is CodeKit MCP available?
 
 Stop and re-evaluate when you catch yourself thinking or doing any of these:
 
-| Thought / Action | Why It's Wrong |
-|-----------------|----------------|
-| "I'll just guess the serial port — it's probably /dev/ttyUSB0" | Wrong port causes download failures or bricking. Always list ports. |
-| "The board name is probably..." | Board names vary by SDK version and config. Always call `sifli_board_list`. |
-| "Let me run a full rebuild to be safe" | Wastes time; use `sifli_build_compile` first, rebuild only if stale. |
-| "I'll just run the MCP tool without checking state first" | Without the project-state tool you don't know what's active. |
-| "This token is just for config, I can show it" | Bearer tokens grant control; expose only when user explicitly needs connection details. |
-| "The shell command is faster than finding the right MCP tool" | Bypassing CodeKit loses state and creates fragile ad-hoc workflows. |
-| "The tool name must be `sifli_project_getState` everywhere" | Tool names differ by agent. Match by purpose and current tool list. |
+| Thought / Action                                               | Why It's Wrong                                                                          |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| "I'll just guess the serial port — it's probably /dev/ttyUSB0" | Wrong port causes download failures or bricking. Always list ports.                     |
+| "The board name is probably..."                                | Board names vary by SDK version and config. Always call `sifli_board_list`.             |
+| "Let me run a full rebuild to be safe"                         | Wastes time; use `sifli_build_compile` first, rebuild only if stale.                    |
+| "I'll just run the MCP tool without checking state first"      | Without the project-state tool you don't know what's active.                            |
+| "This token is just for config, I can show it"                 | Bearer tokens grant control; expose only when user explicitly needs connection details. |
+| "The shell command is faster than finding the right MCP tool"  | Bypassing CodeKit loses state and creates fragile ad-hoc workflows.                     |
+| "The tool name must be `sifli_project_getState` everywhere"    | Tool names differ by agent. Match by purpose and current tool list.                     |
 
 ## Common Mistakes
 
-| Mistake | Fix |
-|---------|-----|
-| Activating SDK or selecting board without checking current state first | Always call the project-state tool before making changes. |
-| Running `sifli_build_rebuild` when `sifli_build_compile` would suffice | Use compile for incremental builds; rebuild only when outputs are suspected stale. |
-| Guessing serial port paths or board names | Always use `sifli_serial_listPorts` and `sifli_board_list` to discover available options. |
-| Attempting download without confirming board and serial port selection | Check `selectedBoard` and `selectedSerialPort` in project state before download. |
-| Exposing or committing bearer tokens in config files | Keep tokens local; add `.mcp.json` to `.gitignore` if needed. |
-| Printing `.mcp.json` to prove the server exists | Report only server name, host/port, and whether a token is present; do not echo the token. |
-| Calling workflows without prior validation | Always call the workflow-validation tool before saving or running a workflow. |
-| Ignoring `sifli_build_menuconfig` return status or logs | Menuconfig opens in a VS Code terminal and returns once launched; read the output before claiming success. |
+| Mistake                                                                | Fix                                                                                                        |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Activating SDK or selecting board without checking current state first | Always call the project-state tool before making changes.                                                  |
+| Running `sifli_build_rebuild` when `sifli_build_compile` would suffice | Use compile for incremental builds; rebuild only when outputs are suspected stale.                         |
+| Guessing serial port paths or board names                              | Always use `sifli_serial_listPorts` and `sifli_board_list` to discover available options.                  |
+| Attempting download without confirming board and serial port selection | Check `selectedBoard` and `selectedSerialPort` in project state before download.                           |
+| Exposing or committing bearer tokens in config files                   | Keep tokens local; add `.mcp.json` to `.gitignore` if needed.                                              |
+| Printing `.mcp.json` to prove the server exists                        | Report only server name, host/port, and whether a token is present; do not echo the token.                 |
+| Calling workflows without prior validation                             | Always call the workflow-validation tool before saving or running a workflow.                              |
+| Ignoring `sifli_build_menuconfig` return status or logs                | Menuconfig opens in a VS Code terminal and returns once launched; read the output before claiming success. |
+
+## Event Push (MCP Resources)
+
+CodeKit MCP supports **Resources 订阅机制**。Agent 可订阅以下资源 URI，状态变更时自动收到推送通知，无需轮询：
+
+| Resource URI              | 内容                           | 推送时机       |
+| ------------------------- | ------------------------------ | -------------- |
+| `codekit://build/status`  | 编译/烧录状态                  | 构建开始或结束 |
+| `codekit://state/summary` | 项目状态快照（SDK/Board/Port） | 任何选择变更   |
+
+Agent 通过标准 MCP 协议交互：`resources/subscribe` → 接收 `notifications/resources/updated` → `resources/read` 获取最新数据。
 
 ## Task Map
 
@@ -143,4 +156,4 @@ Stop and re-evaluate when you catch yourself thinking or doing any of these:
 - Do not expose bearer tokens in final answers unless the user explicitly asks for connection configuration details.
 - Do not assume one agent's CodeKit tool spelling applies to another agent. Check the current tool surface first.
 
-*Last updated: 2026-06-09*
+_Last updated: 2026-06-09_

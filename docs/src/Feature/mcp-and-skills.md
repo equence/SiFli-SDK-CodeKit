@@ -111,6 +111,14 @@ npx skills add OpenSiFli/SiFli-SDK-CodeKit
 | `sifli.workflow.validate` | 验证工作流配置或提供的定义是否正确 |
 | `sifli.workflow.run` | 按引用运行工作流，可传入输入参数 |
 
+#### ⚙️ Kconfig 配置
+
+| 工具 | 功能说明 |
+|------|---------|
+| `sifli.kconfig.snapshot` | 读取当前项目的完整 Kconfig 配置树 |
+| `sifli.kconfig.setValue` | 设置单个 Kconfig 配置项并持久化 |
+| `sifli.kconfig.saveChanges` | 批量保存 Kconfig 变更并触发重新生成头文件 |
+
 ### 架构说明
 
 MCP Server 运行在 VS Code 扩展宿主内，因此外部客户端连接时需要本插件所在的 VS Code 实例保持运行。服务采用 Bearer Token 认证，支持固定 Token 和自动生成 Token 两种方式，确保连接安全。
@@ -126,4 +134,19 @@ Agent 调用 MCP 时，大量冗余字段会浪费 Token、拖慢响应。`压�
 #### 使用方式
 
 扩展侧边栏 MCP 区域提供 **压缩模式** 开关（默认开启），点击即可切换。也可通过命令面板运行 `切换 SiFli MCP 压缩模式`，或修改设置 `sifli-sdk-codekit.mcp.compactResponses`。
+
+### 事件推送（试验性）
+
+CodeKit MCP 支持 **Resources 订阅机制**。Agent 订阅资源后，状态变更时会自动收到推送通知，无需轮询。
+
+| Resource URI | 内容 | 推送时机 |
+|---|---|---|
+| `codekit://build/status` | 编译/烧录状态 | 构建开始或结束 |
+| `codekit://state/summary` | 项目状态快照 | SDK/Board/Port 变更 |
+
+#### Agent 工作流
+
+1. Agent 通过 `resources/subscribe` 订阅资源
+2. CodeKit 状态变更时通过 `notifications/resources/updated` 通知
+3. Agent 调用 `resources/read` 获取最新数据
 
