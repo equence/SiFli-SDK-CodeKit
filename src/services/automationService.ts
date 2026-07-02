@@ -190,7 +190,8 @@ export class AutomationService {
       workflowScope: result.workflowScope,
       dryRun: result.dryRun,
       runId: result.runId,
-      terminalName: result.runId ? TERMINAL_NAME : undefined,
+      // ponytail: lean mode drops constant terminalName
+      ...(this.isCompactMode() ? {} : { terminalName: result.runId ? TERMINAL_NAME : undefined }),
       exitCode: result.exitCode,
       failedStepIndex: result.failedStepIndex,
       failedStepType: result.failedStepType,
@@ -412,6 +413,16 @@ export class AutomationService {
   public async listBoards(): Promise<unknown> {
     const boards = await this.boardService.discoverBoards();
     const selectedBoard = this.configService.getSelectedBoardName();
+    if (this.isCompactMode()) {
+      // ponytail: compact board list — flat names, type is always 'sdk', selected as separate field
+      return this.withResult({
+        success: true,
+        operation: 'listBoards',
+        boardCount: boards.length,
+        boards: boards.map(board => board.name),
+        selectedBoard: boards.find(board => board.name === selectedBoard)?.name ?? null,
+      });
+    }
     return this.withResult({
       success: true,
       operation: 'listBoards',
@@ -468,6 +479,26 @@ export class AutomationService {
     const selectedPort = this.serialPortService.selectedSerialPort;
     const monitorPort = this.serialPortService.monitorSerialPort;
     const supportedBaudRates = SerialPortService.getBaudRates();
+    if (this.isCompactMode()) {
+      // ponytail: lean mode moves shared fields out of per-port objects
+      return this.withResult({
+        success: true,
+        operation: 'listSerialPorts',
+        supportedBaudRates,
+        currentDownloadBaudRate: this.serialPortService.downloadBaudRate,
+        currentMonitorBaudRate: this.serialPortService.monitorBaudRate,
+        ports: ports.map(port => ({
+          path: port.path,
+          manufacturer: port.manufacturer,
+          serialNumber: port.serialNumber,
+          vendorId: port.vendorId,
+          productId: port.productId,
+          selected: port.path === selectedPort,
+          selectedForDownload: port.path === selectedPort,
+          selectedForMonitor: port.path === monitorPort,
+        })),
+      });
+    }
     return this.withResult({
       success: true,
       operation: 'listSerialPorts',
@@ -632,11 +663,26 @@ export class AutomationService {
         maxEntries: input.maxEntries,
         consume: input.consume ?? true,
       });
+      if (this.isCompactMode()) {
+        // ponytail: lean mode drops entries, connectionId — text summary is sufficient for LLM
+        return this.withResult({
+          success: true,
+          operation: 'serialRead',
+          text: result.entries.map(entry => `[${entry.source}] ${entry.text}`).join('\n'),
+          nextAfterId: result.nextAfterId,
+        });
+      }
+      const entries = result.entries.map(e => {
+        const { hex: _hex, ...rest } = e;
+        return rest;
+      });
       return this.withResult({
         success: true,
         operation: 'serialRead',
-        ...result,
-        text: result.entries.map(entry => `[${entry.source}] ${entry.text}`).join('\n'),
+        connectionId: result.connectionId,
+        entries,
+        nextAfterId: result.nextAfterId,
+        text: entries.map(entry => `[${entry.source}] ${entry.text}`).join('\n'),
       });
     } catch (error) {
       return this.withResult({
@@ -1230,6 +1276,11 @@ export class AutomationService {
     [key: string]: unknown;
   }): unknown {
     const { success, operation, message, state, data, ...rest } = payload;
+    if (this.isCompactMode()) {
+      // ponytail: lean mode — no duplicate top-level spread, no heavy state attachment
+      const d = data ?? rest;
+      return Object.keys(d).length ? { success, operation, message, data: d } : { success, operation, message };
+    }
     return {
       success,
       operation,
@@ -1238,6 +1289,15 @@ export class AutomationService {
       state: state ?? this.getProjectState(),
       ...rest,
     };
+  }
+
+  private isCompactMode(): boolean {
+    // ponytail: sync vscode config read — cached, no I/O cost
+    try {
+      return vscode.workspace.getConfiguration('sifli-sdk-codekit').get<boolean>('mcp.compactResponses', true);
+    } catch {
+      return true;
+    }
   }
 
   private ensureSiFliProject(operation: string): { ok: true } | { ok: false; payload: unknown } {
@@ -1263,11 +1323,12 @@ export class AutomationService {
     message?: string,
     extras?: Record<string, unknown>
   ): unknown {
+    // ponytail: lean mode drops constant terminalName — LLM doesn't need 'SF32' on every build response
     return this.withResult({
       success,
       operation,
       runId,
-      terminalName: TERMINAL_NAME,
+      ...(this.isCompactMode() ? {} : { terminalName: TERMINAL_NAME }),
       exitCode,
       command,
       message,

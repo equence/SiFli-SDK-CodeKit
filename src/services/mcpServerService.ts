@@ -590,7 +590,10 @@ export class McpServerService {
     structuredContent?: Record<string, unknown>;
     isError?: boolean;
   } {
-    const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+    const compactMode =
+      typeof payload === 'object' && payload !== null && !Array.isArray(payload) ? this.isCompactMode() : false;
+    // ponytail: lean mode uses compact JSON — LLMs parse it fine, saves 20-50% on text content
+    const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, compactMode ? 0 : 2);
     const result: {
       content: Array<{ type: 'text'; text: string }>;
       structuredContent?: Record<string, unknown>;
@@ -600,13 +603,25 @@ export class McpServerService {
     };
 
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-      result.structuredContent = payload as Record<string, unknown>;
-      if ('success' in result.structuredContent && result.structuredContent.success === false) {
+      // ponytail: lean mode skips structuredContent — text content is sufficient for LLM consumption
+      if (!compactMode) {
+        result.structuredContent = payload as Record<string, unknown>;
+      }
+      if ('success' in (payload as Record<string, unknown>) && (payload as Record<string, unknown>).success === false) {
         result.isError = true;
       }
     }
 
     return result;
+  }
+
+  private isCompactMode(): boolean {
+    // ponytail: sync vscode config read — cached, no I/O cost
+    try {
+      return vscode.workspace.getConfiguration('sifli-sdk-codekit').get<boolean>('mcp.compactResponses', true);
+    } catch {
+      return true;
+    }
   }
 
   private isAuthorized(request: http.IncomingMessage): boolean {

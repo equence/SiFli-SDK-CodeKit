@@ -339,6 +339,10 @@
         "title": "%command.mcp.showLogs.title%"
       },
       {
+        "command": "extension.mcp.toggleCompactResponses",
+        "title": "%command.mcp.toggleCompactResponses.title%"
+      },
+      {
         "command": "extension.toggleBuildWithSaveCheck",
         "title": "%command.toggleBuildWithSaveCheck.title%"
       },
@@ -1236,6 +1240,12 @@
             "type": "string",
             "default": "",
             "description": "%configuration.sifli.mcp.fixedToken.description%",
+            "scope": "machine-overridable"
+          },
+          "sifli-sdk-codekit.mcp.compactResponses": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.sifli.mcp.compactResponses.description%",
             "scope": "machine-overridable"
           },
           "sifli-sdk-codekit.buildWithSaveCheck": {
