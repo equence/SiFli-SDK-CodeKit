@@ -94,6 +94,33 @@ Is CodeKit MCP available?
 5. Treat tools that open UI or require host interaction (e.g. menuconfig or monitor-open tools) as stateful operations. After launching, tell the user what opened and what they need to do, then ask whether to wait or continue. Do not assume the action completed just because the tool returned.
 6. After build/download/serial operations, read the returned status or logs before claiming success.
 
+## SDK Module Reference
+
+When the user asks to add a module feature (e.g. "add BLE battery service", "enable UART3 with DMA"), **first ask the user**: "你希望直接写（不参考现有例程），还是参考 SDK 里的现有例程，在例程基础上修改适配到你的工程？"
+
+- **用户选"直接写"** → 按以下步骤自主探索需求对应的 SDK 模块文档获取准确信息，不依赖特定例程。
+- **用户选"参考例程"** → 先找到相关的 SDK 例程路径，按以下步骤自主探索需求对应的 SDK 模块文档获取准确信息基于例程修改。
+
+自主探索步骤：
+
+1. **Find relevant docs** — SDK docs live at `{sdk_path}/docs/source/zh_CN/`. Navigate by layer:
+   - `middleware/` — Bluetooth, BLE profiles, file system, power management …
+   - `drivers/` — UART, SPI, I2C, GPIO, PWM …
+   - `hal/` — DMA, timer, ADC …
+   - Match the module name to filenames (e.g. `uart.md` → UART, `ble_gap.md` → BLE GAP).
+
+2. **Read the doc** for config descriptions, API overview, and usage notes. Most docs already list `CONFIG_*` symbols inline.
+
+3. **Check examples** at `{sdk_path}/example/`. Same-named directories contain:
+   - `project/proj.conf` — extract the non-default CONFIG\_\* the example needs.
+   - `src/` — read the API call order and initialization patterns.
+
+4. **Verify with Kconfig JSON tree** — use `sifli_kconfig_*` tools (or kconfig_bridge.py dump) to confirm the selected symbols exist in the current board's Kconfig and satisfy any `depends on` constraints.
+
+5. **For API signatures** — read public headers under `{sdk_path}/drivers/`, `{sdk_path}/hal/`, or `{sdk_path}/middleware/{module}/include/`.
+
+The SDK path (`sdk_path`) is available from the CodeKit project state tool — call it first if not already known.
+
 ## When NOT to Use
 
 - **Raw flash readback, explicit address/size operations, chip-memory compatibility** → Use the separate `sftool` skill instead.
@@ -156,4 +183,4 @@ Agent 通过标准 MCP 协议交互：`resources/subscribe` → 接收 `notifica
 - Do not expose bearer tokens in final answers unless the user explicitly asks for connection configuration details.
 - Do not assume one agent's CodeKit tool spelling applies to another agent. Check the current tool surface first.
 
-_Last updated: 2026-06-09_
+_Last updated: 2026-07-03_
